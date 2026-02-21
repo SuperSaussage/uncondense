@@ -1,0 +1,14 @@
+name: Uncondense
+version: 1.0.0
+main: com.example.uncondense.UncondensePlugin
+api-version: "1.21"
+
+commands:
+  uncondense:
+    description: Convert a block in your hand into items (reverse of condense).
+    usage: /uncondense [amount]
+
+permissions:
+  uncondense.use:
+    description: Allows use of /uncondense
+    default: false
