@@ -1,11 +1,12 @@
 package com.example.uncondense;
 
+import dev.lone.itemsadder.api.CustomStack;
 import org.bukkit.ChatColor;
-import org.bukkit.Material;
 import org.bukkit.command.*;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.Material;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -19,109 +20,143 @@ public final class UncondenseCommand implements CommandExecutor {
         this.plugin = plugin;
     }
 
-    private Map<Material, Material> loadMappings() {
-        Map<Material, Material> map = new HashMap<>();
+    /**
+     * Loads mappings from config in the form:
+     *   vanilla: "minecraft:diamond_block"
+     *   custom:  "itemsadder:my_custom_item"
+     */
+    private Map<String, String> loadMappings() {
+        Map<String, String> map = new HashMap<>();
         ConfigurationSection sec = plugin.getConfig().getConfigurationSection("mappings");
         if (sec == null) return map;
 
         for (String key : sec.getKeys(false)) {
             String val = sec.getString(key);
             if (val == null) continue;
-
-            Material in = Material.matchMaterial(key);
-            Material out = Material.matchMaterial(val);
-
-            if (in != null && out != null) {
-                map.put(in, out);
-            } else {
-                plugin.getLogger().warning("Invalid mapping in config.yml: " + key + " -> " + val);
-            }
+            map.put(key.toLowerCase(), val.toLowerCase());
         }
         return map;
     }
 
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
+
         if (!(sender instanceof Player player)) {
             sender.sendMessage(ChatColor.RED + "Players only.");
             return true;
         }
         if (!player.hasPermission(PERM)) {
-            player.sendMessage(ChatColor.RED + "You don't have permission to use this command.");
+            player.sendMessage(ChatColor.RED + "You don't have permission.");
             return true;
         }
 
-        // Optional: /uncondense hand (only main hand)
-        boolean handOnly = args.length >= 1 && args[0].equalsIgnoreCase("hand");
-
-        Map<Material, Material> mappings = loadMappings();
+        Map<String, String> mappings = loadMappings();
         if (mappings.isEmpty()) {
             player.sendMessage(ChatColor.RED + "No mappings configured.");
             return true;
         }
 
-        int totalInputsConsumed = 0;
-        int totalOutputsGiven = 0;
-        int totalConvertedStacks = 0;
+        boolean handOnly = args.length > 0 && args[0].equalsIgnoreCase("hand");
 
+        int totalInputs = 0;
+        int totalOutputs = 0;
+        int convertedStacks = 0;
+
+        // =================================
+        // --- HAND ONLY MODE
+        // =================================
         if (handOnly) {
             ItemStack hand = player.getInventory().getItemInMainHand();
             if (hand == null || hand.getType().isAir()) {
                 player.sendMessage(ChatColor.RED + "Hold an item in your main hand.");
                 return true;
             }
-            Material out = mappings.get(hand.getType());
-            if (out == null) {
-                player.sendMessage(ChatColor.RED + "That item can't be uncondensed on this server.");
+
+            // Determine ID (vanilla name or ItemsAdder namespace:id)
+            String keyId = hand.getType().name().toLowerCase();
+            CustomStack csHand = CustomStack.byItemStack(hand);
+            if (csHand != null) {
+                keyId = csHand.getNamespacedID().toLowerCase();
+            }
+
+            String outId = mappings.get(keyId);
+            if (outId == null) {
+                player.sendMessage(ChatColor.RED + "That item can't be uncondensed.");
                 return true;
             }
 
-            int inAmount = hand.getAmount();
-            int outAmount = inAmount * 9;
+            int amountIn = hand.getAmount();
+            int amountOut = amountIn * 9;
 
+            // Clear the hand
             player.getInventory().setItemInMainHand(null);
-            Map<Integer, ItemStack> leftover = player.getInventory().addItem(new ItemStack(out, outAmount));
-            leftover.values().forEach(item -> player.getWorld().dropItemNaturally(player.getLocation(), item));
 
-            player.sendMessage(ChatColor.GREEN + "Uncondensed " + inAmount + "x " + hand.getType().name()
-                    + " into " + outAmount + "x " + out.name() + ".");
+            // Determine output stack
+            ItemStack outStack;
+            if (outId.contains(":")) {
+                outStack = CustomStack.get(outId).getItem().clone();
+            } else {
+                Material matOut = Material.matchMaterial(outId.toUpperCase());
+                outStack = new ItemStack(matOut);
+            }
+            outStack.setAmount(amountOut);
+
+            player.getInventory().addItem(outStack)
+                  .values().forEach(item -> player.getWorld().dropItemNaturally(player.getLocation(), item));
+
+            player.sendMessage(ChatColor.GREEN + "Uncondensed " + amountIn + " into " + amountOut + " items.");
             return true;
         }
 
-        // Full inventory mode (default)
-        ItemStack[] contents = player.getInventory().getContents();
+        // =================================
+        // --- FULL INVENTORY MODE
+        // =================================
+        for (ItemStack stack : player.getInventory().getContents()) {
 
-        for (int slot = 0; slot < contents.length; slot++) {
-            ItemStack stack = contents[slot];
             if (stack == null || stack.getType().isAir()) continue;
 
-            Material inType = stack.getType();
-            Material outType = mappings.get(inType);
-            if (outType == null) continue;
+            // Get ID
+            String keyId = stack.getType().name().toLowerCase();
+            CustomStack custom = CustomStack.byItemStack(stack);
+            if (custom != null) {
+                keyId = custom.getNamespacedID().toLowerCase();
+            }
 
-            int inAmount = stack.getAmount();
-            int outAmount = inAmount * 9;
+            String outId = mappings.get(keyId);
+            if (outId == null) continue;
 
-            // Remove the input stack entirely
-            player.getInventory().setItem(slot, null);
+            int inAmt  = stack.getAmount();
+            int outAmt = inAmt * 9;
 
-            // Add output items; drop overflow
-            Map<Integer, ItemStack> leftover = player.getInventory().addItem(new ItemStack(outType, outAmount));
-            leftover.values().forEach(item -> player.getWorld().dropItemNaturally(player.getLocation(), item));
+            // Remove the input
+            stack.setAmount(0);
 
-            totalInputsConsumed += inAmount;
-            totalOutputsGiven += outAmount;
-            totalConvertedStacks++;
+            // Prepare output
+            ItemStack outStack;
+            if (outId.contains(":")) {
+                outStack = CustomStack.get(outId).getItem().clone();
+            } else {
+                Material matOut = Material.matchMaterial(outId.toUpperCase());
+                outStack = new ItemStack(matOut);
+            }
+            outStack.setAmount(outAmt);
+
+            player.getInventory().addItem(outStack)
+                  .values().forEach(item -> player.getWorld().dropItemNaturally(player.getLocation(), item));
+
+            totalInputs += inAmt;
+            totalOutputs += outAmt;
+            convertedStacks++;
         }
 
-        if (totalConvertedStacks == 0) {
-            player.sendMessage(ChatColor.RED + "Nothing in your inventory can be uncondensed.");
+        if (convertedStacks == 0) {
+            player.sendMessage(ChatColor.RED + "Nothing to uncondense.");
             return true;
         }
 
-        player.sendMessage(ChatColor.GREEN + "Uncondensed " + totalInputsConsumed + " block(s) across "
-                + totalConvertedStacks + " stack(s) into " + totalOutputsGiven + " item(s).");
-        player.sendMessage(ChatColor.GRAY + "Tip: /uncondense hand only converts your main-hand stack.");
+        player.sendMessage(ChatColor.GREEN +
+                "Uncondensed " + totalInputs + " items across " + convertedStacks +
+                " stacks into " + totalOutputs + " items.");
         return true;
     }
 }
