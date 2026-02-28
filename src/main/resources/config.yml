@@ -1,13 +1,15 @@
 mappings:
-  COAL_BLOCK: COAL
+  # Vanilla blocks to items
+  minecraft:coal_block: minecraft:coal
+  minecraft:iron_block: minecraft:iron_ingot
+  minecraft:raw_iron_block: minecraft:raw_iron
+  minecraft:gold_block: minecraft:gold_ingot
+  minecraft:raw_gold_block: minecraft:raw_gold
+  minecraft:lapis_block: minecraft:lapis_lazuli
+  minecraft:redstone_block: minecraft:redstone
+  minecraft:diamond_block: minecraft:diamond
+  minecraft:emerald_block: minecraft:emerald
 
-  IRON_BLOCK: IRON_INGOT
-  RAW_IRON_BLOCK: RAW_IRON
-
-  GOLD_BLOCK: GOLD_INGOT
-  RAW_GOLD_BLOCK: RAW_GOLD
-
-  LAPIS_BLOCK: LAPIS_LAZULI
-  REDSTONE_BLOCK: REDSTONE
-  DIAMOND_BLOCK: DIAMOND
-  EMERALD_BLOCK: EMERALD
+  # Example ItemsAdder items (uncomment and replace with actual IDs)
+  # mynamespace:custom_block: mynamespace:custom_ingot
+  # mynamespace:custom_ingot: mynamespace:custom_nugget
